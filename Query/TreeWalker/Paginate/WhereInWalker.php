@@ -17,6 +17,8 @@
 
 namespace Knp\Bundle\PaginatorBundle\Query\TreeWalker\Paginate;
 
+use Doctrine\ORM\Query\AST\ArithmeticExpression;
+use Doctrine\ORM\Query\AST\SimpleArithmeticExpression;
 use Doctrine\ORM\Query\TreeWalkerAdapter,
     Doctrine\ORM\Query\AST\SelectStatement,
     Doctrine\ORM\Query\AST\PathExpression,
@@ -43,7 +45,7 @@ class WhereInWalker extends TreeWalkerAdapter
     /**
      * ID Count hint name
      */
-    const HINT_PAGINATOR_ID_COUNT = 'bundle.knp_paginator.id.count';
+    const HINT_PAGINATOR_ID_COUNT = 'knp_paginator.id.count';
 
     /**
      * Primary key alias for query
@@ -66,15 +68,22 @@ class WhereInWalker extends TreeWalkerAdapter
      */
     public function walkSelectStatement(SelectStatement $AST)
     {
-        $parent = null;
-        $parentName = null;
+        $rootComponents = array();
         foreach ($this->_getQueryComponents() AS $dqlAlias => $qComp) {
-            if ($qComp['parent'] === null && $qComp['nestingLevel'] == 0) {
-                $parent = $qComp;
-                $parentName = $dqlAlias;
-                break;
+            $isParent = array_key_exists('parent', $qComp)
+                && $qComp['parent'] === null
+                && $qComp['nestingLevel'] == 0
+            ;
+            if ($isParent) {
+                $rootComponents[] = array($dqlAlias => $qComp);
             }
         }
+        if (count($rootComponents) > 1) {
+            throw new \RuntimeException("Cannot count query which selects two FROM components, cannot make distinction");
+        }
+        $root = reset($rootComponents);
+        $parentName = key($root);
+        $parent = current($root);
 
         $pathExpression = new PathExpression(
             PathExpression::TYPE_STATE_FIELD, $parentName, $parent['metadata']->getSingleIdentifierFieldName()
@@ -84,7 +93,16 @@ class WhereInWalker extends TreeWalkerAdapter
         $count = $this->_getQuery()->getHint(self::HINT_PAGINATOR_ID_COUNT);
 
         if ($count > 0) {
-            $expression = new InExpression($pathExpression);
+            // in new doctrine 2.2 version theres a different expression
+            if (property_exists('Doctrine\ORM\Query\AST\InExpression', 'expression')) {
+                $arithmeticExpression = new ArithmeticExpression();
+                $arithmeticExpression->simpleArithmeticExpression = new SimpleArithmeticExpression(
+                    array($pathExpression)
+                );
+                $expression = new InExpression($arithmeticExpression);
+            } else {
+                $expression = new InExpression($pathExpression);
+            }
             $ns = self::PAGINATOR_ID_ALIAS;
 
             for ($i = 1; $i <= $count; $i++) {
