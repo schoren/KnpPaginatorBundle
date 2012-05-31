@@ -15,7 +15,7 @@
  * @license     http://hobodave.com/license.txt New BSD License
  */
 
-namespnce Knp\Bundle\PaginatorBundle\Query\TreeWalker\Paginate;
+namespace Knp\Bundle\PaginatorBundle\Query\TreeWalker\Paginate;
 
 use Doctrine\ORM\Query\AST\ArithmeticExpression;
 use Doctrine\ORM\Query\AST\SimpleArithmeticExpression;
